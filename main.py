@@ -1,5 +1,6 @@
 import pyxel
 import random
+import types
 
 # ゲームの定数
 TITLE = "Pyxel Roguelike"
@@ -20,15 +21,14 @@ def _main():
     pyxel.init(WIDTH, HEIGHT, title=TITLE)
     
     # ゲーム状態の初期化
-    game_state = {
-        "game_over": False,
-        "level": 1,
-        "map_data": [],
-        "player": None,
-        "enemies": [],
-        "items": []
-    }
-    
+    game_state = types.SimpleNamespace(
+        game_over=False,
+        level=1,
+        map_data=[],
+        player=None,
+        enemies=[],
+        items=[])
+
     # ゲームの初期化
     _reset_game(game_state)
     
@@ -39,7 +39,7 @@ def _main():
 # update関数の定義
 def _update(game_state):
     # ゲームオーバー時の処理
-    if game_state["game_over"]:
+    if game_state.game_over:
         if pyxel.btnp(pyxel.KEY_R):
             _reset_game(game_state)
         return
@@ -57,20 +57,20 @@ def _update(game_state):
     
     # プレイヤー移動
     if dx != 0 or dy != 0:
-        player = game_state["player"]
+        player = game_state.player
         new_x = player.x + dx
         new_y = player.y + dy
         
         # 壁判定
-        if 0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT and game_state["map_data"][new_y][new_x] == FLOOR:
+        if 0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT and game_state.map_data[new_y][new_x] == FLOOR:
             # 敵との衝突判定
             enemy_hit = False
-            for enemy in game_state["enemies"]:
+            for enemy in game_state.enemies:
                 if enemy.x == new_x and enemy.y == new_y:
                     # 敵を攻撃
                     enemy.hp -= player.attack
                     if enemy.hp <= 0:
-                        game_state["enemies"].remove(enemy)
+                        game_state.enemies.remove(enemy)
                         player.exp += 1
                     enemy_hit = True
                     break
@@ -80,22 +80,22 @@ def _update(game_state):
                 player.y = new_y
             
             # アイテム取得判定
-            for item in game_state["items"][:]:
+            for item in game_state.items[:]:
                 if item.x == player.x and item.y == player.y:
                     # アイテムを拾う
                     player.hp += 5
-                    game_state["items"].remove(item)
+                    game_state.items.remove(item)
             
             # 敵のターン処理
             _enemy_turn(game_state)
     
     # 終了条件
-    if len(game_state["enemies"]) == 0:
-        game_state["level"] += 1
+    if len(game_state.enemies) == 0:
+        game_state.level += 1
         _reset_game(game_state)
     
-    if game_state["player"].hp <= 0:
-        game_state["game_over"] = True
+    if game_state.player.hp <= 0:
+        game_state.game_over = True
 
 
 # draw関数の定義
@@ -105,32 +105,32 @@ def _draw(game_state):
     # マップの描画
     for y in range(MAP_HEIGHT):
         for x in range(MAP_WIDTH):
-            if game_state["map_data"][y][x] == WALL:
+            if game_state.map_data[y][x] == WALL:
                 pyxel.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, 5)
     
     # アイテムの描画
-    for item in game_state["items"]:
+    for item in game_state.items:
         pyxel.circ(item.x * TILE_SIZE + TILE_SIZE//2, 
                     item.y * TILE_SIZE + TILE_SIZE//2, 
                     TILE_SIZE//3, ITEM_COLOR)
     
     # 敵の描画
-    for enemy in game_state["enemies"]:
+    for enemy in game_state.enemies:
         pyxel.rect(enemy.x * TILE_SIZE + 1, 
                     enemy.y * TILE_SIZE + 1, 
                     TILE_SIZE - 2, TILE_SIZE - 2, ENEMY_COLOR)
     
     # プレイヤーの描画
-    player = game_state["player"]
+    player = game_state.player
     pyxel.rect(player.x * TILE_SIZE + 1, 
                 player.y * TILE_SIZE + 1, 
                 TILE_SIZE - 2, TILE_SIZE - 2, PLAYER_COLOR)
     
     # UI情報の描画
-    pyxel.text(4, 2, f"HP: {player.hp} LV: {game_state['level']} EXP: {player.exp}", 7)
+    pyxel.text(4, 2, f"HP: {player.hp} LV: {game_state.level} EXP: {player.exp}", 7)
     
     # ゲームオーバー画面
-    if game_state["game_over"]:
+    if game_state.game_over:
         pyxel.text(52, 50, "GAME OVER", 8)
         pyxel.text(38, 70, "PRESS R TO RESTART", 7)
 
@@ -139,28 +139,28 @@ def _draw(game_state):
 def _reset_game(game_state):
     
     # ゲーム状態の初期化
-    game_state["game_over"] = False
+    game_state.game_over = False
     
     # マップ生成
-    game_state["map_data"] = _generate_map()
+    game_state.map_data = _generate_map()
     
     # プレイヤーの初期化
-    game_state["player"] = Player()
-    _place_entity(game_state["player"], game_state)
+    game_state.player = types.SimpleNamespace(x=0, y=0, hp=20, attack=5, exp=0)
+    _place_entity(game_state.player, game_state)
     
     # 敵の初期化
-    game_state["enemies"] = []
+    game_state.enemies = []
     for _ in range(3):  # 敵の数
-        enemy = Enemy()
+        enemy = types.SimpleNamespace(x=0, y=0, hp=10, attack=2)
         _place_entity(enemy, game_state)
-        game_state["enemies"].append(enemy)
+        game_state.enemies.append(enemy)
     
     # アイテムの初期化
-    game_state["items"] = []
+    game_state.items = []
     for _ in range(2):  # アイテムの数
-        item = Item()
+        item = types.SimpleNamespace(x=0, y=0)
         _place_entity(item, game_state)
-        game_state["items"].append(item)
+        game_state.items.append(item)
 
 
 def _generate_map():
@@ -183,14 +183,14 @@ def _generate_map():
 
 def _is_occupied(x, y, game_state):
     # 指定した座標に何かエンティティがあるか確認
-    if game_state["player"] and game_state["player"].x == x and game_state["player"].y == y:
+    if game_state.player.x == x and game_state.player.y == y:
         return True
     
-    for enemy in game_state["enemies"]:
+    for enemy in game_state.enemies:
         if enemy.x == x and enemy.y == y:
             return True
     
-    for item in game_state["items"]:
+    for item in game_state.items:
         if item.x == x and item.y == y:
             return True
     
@@ -202,7 +202,7 @@ def _place_entity(entity, game_state):
     while True:
         x = random.randint(3, MAP_WIDTH - 4)
         y = random.randint(3, MAP_HEIGHT - 4)
-        if game_state["map_data"][y][x] == FLOOR and not _is_occupied(x, y, game_state):
+        if game_state.map_data[y][x] == FLOOR and not _is_occupied(x, y, game_state):
             entity.x = x
             entity.y = y
             return
@@ -210,8 +210,8 @@ def _place_entity(entity, game_state):
 
 def _enemy_turn(game_state):
     # 敵の行動
-    player = game_state["player"]
-    for enemy in game_state["enemies"]:
+    player = game_state.player
+    for enemy in game_state.enemies:
         # プレイヤーに近づく簡単なAI
         dx = 1 if player.x > enemy.x else -1 if player.x < enemy.x else 0
         dy = 1 if player.y > enemy.y else -1 if player.y < enemy.y else 0
@@ -228,39 +228,13 @@ def _enemy_turn(game_state):
         
         # 移動可能かどうかを確認
         if (0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT and 
-            game_state["map_data"][new_y][new_x] == FLOOR and not _is_occupied(new_x, new_y, game_state)):
+            game_state.map_data[new_y][new_x] == FLOOR and not _is_occupied(new_x, new_y, game_state)):
             enemy.x = new_x
             enemy.y = new_y
         
         # プレイヤーへの攻撃
         if abs(enemy.x - player.x) <= 1 and abs(enemy.y - player.y) <= 1:
             player.hp -= enemy.attack
-
-
-class Entity:
-    def __init__(self):
-        self.x = 0
-        self.y = 0
-
-
-class Player(Entity):
-    def __init__(self):
-        super().__init__()
-        self.hp = 20
-        self.attack = 5
-        self.exp = 0
-
-
-class Enemy(Entity):
-    def __init__(self):
-        super().__init__()
-        self.hp = 10
-        self.attack = 2
-
-
-class Item(Entity):
-    def __init__(self):
-        super().__init__()
 
 
 if __name__ == "__main__":
