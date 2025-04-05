@@ -185,19 +185,13 @@ def _generate_map():
 
 
 def _is_occupied(x, y, game_state):
-    # 指定した座標に何かエンティティがあるか確認
-    if game_state.player.x == x and game_state.player.y == y:
-        return True
+    '''指定した座標に何かエンティティがあるか確認。'''
+    def entities():
+        yield game_state.player
+        yield from game_state.enemies
+        yield from game_state.items
 
-    for enemy in game_state.enemies:
-        if enemy.x == x and enemy.y == y:
-            return True
-
-    for item in game_state.items:
-        if item.x == x and item.y == y:
-            return True
-
-    return False
+    return any(entity for entity in entities() if entity.x == x and entity.y == y)
 
 
 def _place_entity(entity, game_state):
