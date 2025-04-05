@@ -196,13 +196,13 @@ def _is_occupied(x, y, game_state):
 
 def _place_entity(entity, game_state):
     # エンティティをマップの空いている場所に配置
-    while True:
-        x = random.randint(3, MAP_WIDTH - 4)
-        y = random.randint(3, MAP_HEIGHT - 4)
-        if game_state.map_data[y][x] == FLOOR and not _is_occupied(x, y, game_state):
-            entity.x = x
-            entity.y = y
-            return
+    floors = ((x, y) for y in range(MAP_HEIGHT) for x in range(MAP_WIDTH)
+              if game_state.map_data[y][x] == FLOOR)
+    spaces = [(x, y) for x, y in floors if not _is_occupied(x, y, game_state)]
+    random.shuffle(spaces)
+    x, y = spaces[0]
+    entity.x = x
+    entity.y = y
 
 
 def _enemy_turn(game_state):
