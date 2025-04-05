@@ -140,29 +140,38 @@ def _draw(game_state):
 
 
 def _reset_game(game_state):
-
     # ゲーム状態の初期化
     game_state.game_over = False
 
     # マップ生成
     game_state.map_data = _generate_map()
 
+    # プレイヤー、敵、アイテム配置のための空き場所を順不同で返すジェネレーターを作成
+    def gen_free_places():
+        floors = [(x, y) for y in range(MAP_HEIGHT)
+                  for x in range(MAP_WIDTH)
+                  if game_state.map_data[y][x] == FLOOR]
+        random.shuffle(floors)
+        yield from floors
+
+    free_places = gen_free_places()
+
     # プレイヤーの初期化
-    game_state.player = types.SimpleNamespace(x=0, y=0, hp=20, attack=5, exp=0)
-    _place_entity(game_state.player, game_state)
+    x, y = next(free_places)
+    game_state.player = types.SimpleNamespace(x=x, y=y, hp=20, attack=5, exp=0)
 
     # 敵の初期化
     game_state.enemies = []
     for _ in range(3):  # 敵の数
-        enemy = types.SimpleNamespace(x=0, y=0, hp=10, attack=2)
-        _place_entity(enemy, game_state)
+        x, y = next(free_places)
+        enemy = types.SimpleNamespace(x=x, y=y, hp=10, attack=2)
         game_state.enemies.append(enemy)
 
     # アイテムの初期化
     game_state.items = []
     for _ in range(2):  # アイテムの数
-        item = types.SimpleNamespace(x=0, y=0)
-        _place_entity(item, game_state)
+        x, y = next(free_places)
+        item = types.SimpleNamespace(x=x, y=y)
         game_state.items.append(item)
 
 
@@ -192,17 +201,6 @@ def _is_occupied(x, y, game_state):
         yield from game_state.items
 
     return any(entity for entity in entities() if entity.x == x and entity.y == y)
-
-
-def _place_entity(entity, game_state):
-    # エンティティをマップの空いている場所に配置
-    floors = ((x, y) for y in range(MAP_HEIGHT) for x in range(MAP_WIDTH)
-              if game_state.map_data[y][x] == FLOOR)
-    spaces = [(x, y) for x, y in floors if not _is_occupied(x, y, game_state)]
-    random.shuffle(spaces)
-    x, y = spaces[0]
-    entity.x = x
-    entity.y = y
 
 
 def _enemy_turn(game_state):
