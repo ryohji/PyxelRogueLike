@@ -62,8 +62,7 @@ def _update(game_state):
         new_y = player.y + dy
 
         # 壁判定
-        if (0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT and
-                game_state.map_data[new_y][new_x] == FLOOR):
+        if _is_floor(game_state, new_x, new_y):
             # 敵との衝突判定
             enemy_hit = False
             for enemy in game_state.enemies:
@@ -185,16 +184,6 @@ def _generate_map():
     return new_map
 
 
-def _is_occupied(x, y, game_state):
-    '''指定した座標に何かエンティティがあるか確認。'''
-    def entities():
-        yield game_state.player
-        yield from game_state.enemies
-        yield from game_state.items
-
-    return any(entity for entity in entities() if entity.x == x and entity.y == y)
-
-
 def _enemy_turn(game_state):
     # 敵の行動
     player = game_state.player
@@ -219,11 +208,26 @@ def _enemy_turn(game_state):
             new_y = enemy.y + dy
 
             # 移動可能かどうかを確認
-            if (0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT and
-                    game_state.map_data[new_y][new_x] == FLOOR and
-                    not _is_occupied(new_x, new_y, game_state)):
+            if (_is_floor(game_state, new_x, new_y) and
+                    not _is_occupied(game_state, new_x, new_y)):
                 enemy.x = new_x
                 enemy.y = new_y
+
+
+def _is_floor(game_state, x, y):
+    return (0 <= x < MAP_WIDTH and
+            0 <= y < MAP_HEIGHT and
+            game_state.map_data[y][x] == FLOOR)
+
+
+def _is_occupied(game_state, x, y):
+    '''指定した座標に何かエンティティがあるか確認。'''
+    def entities():
+        yield game_state.player
+        yield from game_state.enemies
+        yield from game_state.items
+
+    return any(entity for entity in entities() if entity.x == x and entity.y == y)
 
 
 if __name__ == "__main__":
