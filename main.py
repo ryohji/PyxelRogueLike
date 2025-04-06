@@ -199,30 +199,31 @@ def _enemy_turn(game_state):
     # 敵の行動
     player = game_state.player
     for enemy in game_state.enemies:
-        # プレイヤーに近づく簡単なAI
-        dx = 1 if player.x > enemy.x else -1 if player.x < enemy.x else 0
-        dy = 1 if player.y > enemy.y else -1 if player.y < enemy.y else 0
-
-        # ランダム性を加える
-        if random.random() < 0.3:
-            if random.random() < 0.5:
-                dx = 0
-            else:
-                dy = 0
-
-        new_x = enemy.x + dx
-        new_y = enemy.y + dy
-
-        # 移動可能かどうかを確認
-        if (0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT and
-                game_state.map_data[new_y][new_x] == FLOOR and
-                not _is_occupied(new_x, new_y, game_state)):
-            enemy.x = new_x
-            enemy.y = new_y
-
         # プレイヤーへの攻撃
         if abs(enemy.x - player.x) <= 1 and abs(enemy.y - player.y) <= 1:
-            player.hp -= enemy.attack
+            if random.random() < 0.9:  # 見逃し、空振り判定。
+                player.hp -= enemy.attack
+        else:
+            # プレイヤーに近づく簡単なAI
+            dx = 1 if player.x > enemy.x else -1 if player.x < enemy.x else 0
+            dy = 1 if player.y > enemy.y else -1 if player.y < enemy.y else 0
+
+            # ランダム性を加える
+            if random.random() < 0.3:
+                if random.random() < 0.5:
+                    dx = 0
+                else:
+                    dy = 0
+
+            new_x = enemy.x + dx
+            new_y = enemy.y + dy
+
+            # 移動可能かどうかを確認
+            if (0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT and
+                    game_state.map_data[new_y][new_x] == FLOOR and
+                    not _is_occupied(new_x, new_y, game_state)):
+                enemy.x = new_x
+                enemy.y = new_y
 
 
 if __name__ == "__main__":
