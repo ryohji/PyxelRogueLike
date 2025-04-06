@@ -8,8 +8,8 @@ TITLE = "Pyxel Roguelike"
 WIDTH = 160
 HEIGHT = 120
 TILE_SIZE = 8
-MAP_WIDTH = 16
-MAP_HEIGHT = 16
+MAP_WIDTH = 20
+MAP_HEIGHT = 15
 FLOOR = 0
 WALL = 1
 PLAYER_COLOR = 11
@@ -148,7 +148,7 @@ def _reset_game(game_state):
 
     # プレイヤー、敵、アイテム配置のための空き場所を順不同で返すジェネレーターを作成
     def gen_free_places():
-        floors = [(x, y) for y in range(MAP_HEIGHT)
+        floors = [{'x': x, 'y': y} for y in range(MAP_HEIGHT)
                   for x in range(MAP_WIDTH)
                   if game_state.map_data[y][x] == FLOOR]
         random.shuffle(floors)
@@ -157,22 +157,16 @@ def _reset_game(game_state):
     free_places = gen_free_places()
 
     # プレイヤーの初期化
-    x, y = next(free_places)
-    game_state.player = types.SimpleNamespace(x=x, y=y, hp=20, attack=5, exp=0)
+    game_state.player = types.SimpleNamespace(**next(free_places),
+                                              hp=20, attack=5, exp=0)
 
     # 敵の初期化
-    game_state.enemies = []
-    for _ in range(3):  # 敵の数
-        x, y = next(free_places)
-        enemy = types.SimpleNamespace(x=x, y=y, hp=10, attack=2)
-        game_state.enemies.append(enemy)
+    game_state.enemies = [types.SimpleNamespace(**next(free_places), hp=10, attack=2)
+                          for _ in range(3)]  # 敵の数
 
     # アイテムの初期化
-    game_state.items = []
-    for _ in range(2):  # アイテムの数
-        x, y = next(free_places)
-        item = types.SimpleNamespace(x=x, y=y)
-        game_state.items.append(item)
+    game_state.items = [types.SimpleNamespace(**next(free_places))
+                        for _ in range(2)]  # アイテムの数
 
 
 def _generate_map():
