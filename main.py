@@ -23,7 +23,6 @@ def _main():
 
     # ゲーム状態の初期化
     game_state = types.SimpleNamespace(
-        game_over=False,
         level=1,
         map_data=[],
         player=None,
@@ -40,7 +39,7 @@ def _main():
 # update関数の定義
 def _update(game_state):
     # ゲームオーバー時の処理
-    if game_state.game_over:
+    if _game_is_over(game_state):
         if pyxel.btnp(pyxel.KEY_R):
             _reset_game(game_state)
         return
@@ -96,9 +95,6 @@ def _update(game_state):
         game_state.level += 1
         _reset_game(game_state)
 
-    if game_state.player.hp <= 0:
-        game_state.game_over = True
-
 
 # draw関数の定義
 def _draw(game_state):
@@ -134,15 +130,17 @@ def _draw(game_state):
         4, 2, f"HP: {player.hp} LV: {game_state.level} EXP: {player.exp}", 7)
 
     # ゲームオーバー画面
-    if game_state.game_over:
+    if _game_is_over(game_state):
         pyxel.text(52, 50, "GAME OVER", 8)
         pyxel.text(38, 70, "PRESS R TO RESTART", 7)
 
 
-def _reset_game(game_state):
-    # ゲーム状態の初期化
-    game_state.game_over = False
+def _game_is_over(game_state):
+    return game_state.player.hp <= 0
 
+
+def _reset_game(game_state):
+    '''ゲーム状態の初期化。'''
     # マップ生成
     game_state.map_data = _generate_map()
 
