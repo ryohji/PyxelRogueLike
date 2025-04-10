@@ -1,4 +1,4 @@
-'''main logic of the rogue-like game.'''
+'''main logic of the rogue-like game using generators for flow control.'''
 import random
 import types
 import pyxel
@@ -18,13 +18,6 @@ ITEM_COLOR = 10
 MESSAGE_COLOR = 7
 MESSAGE_BG_COLOR = 0
 
-# ゲーム進行状態を表す定数
-STATE_PLAYER_TURN = 0
-STATE_ENEMY_ATTACK = 1
-STATE_ENEMY_MOVE = 2
-STATE_NEXT_LEVEL = 3
-STATE_GAME_OVER = 4
-
 
 def _main():
     # Pyxelの初期化
@@ -33,37 +26,75 @@ def _main():
     # ゲーム状態の初期化
     game_state = _reset_game(1)
 
+    # ゲームフローを管理するジェネレーターを初期化
+    game_flow = _game_loop(game_state)
+
     # ローカル更新関数の定義
     def update():
-        nonlocal game_state
-        game_state = _update(game_state)
+        nonlocal game_state, game_flow
+        # ジェネレーターを進める
+        try:
+            game_state = next(game_flow)
+        except StopIteration:
+            # ゲームループが終了した場合、新しいループを開始
+            game_state = _reset_game(1)
+            game_flow = _game_loop(game_state)
 
     # ゲームループの開始
     pyxel.run(update, lambda: _draw(game_state))
 
 
-# update関数の定義
-def _update(game_state):
-    # ゲームオーバー時の処理
-    if game_state.game_state == STATE_GAME_OVER:
-        return _reset_game(1) if pyxel.btnp(pyxel.KEY_R) else game_state
+def _game_loop(game_state):
+    """ゲームのメインループをジェネレーターとして実装"""
+    current_state = game_state
 
-    # メッセージ入力待ち状態の処理
-    if game_state.message and game_state.waiting_input:
-        if pyxel.btnp(pyxel.KEY_SPACE):
-            # スペースキーが押されたら次の状態へ進む
-            new_state = _game_state_clone(game_state)
-            new_state.waiting_input = False
-            new_state.message = ""
+    # ゲームループを永続的に実行
+    while True:
+        # プレイヤーのHP確認（ゲームオーバー判定）
+        if current_state.player.hp <= 0:
+            current_state.message = "YOU DIED..."
 
-            # 継続する処理を実行
-            return _continue_game_flow(new_state)
+            # リスタート入力を待つ
+            while True:
+                yield current_state
+                if pyxel.btnp(pyxel.KEY_R):
+                    return  # StopIterationを発生させて新しいゲームを開始
 
-        return game_state
+        # レベルループ
+        while len(current_state.enemies) > 0:
+            # プレイヤーターン
+            current_state = yield from _player_turn(current_state)
 
-    # プレイヤーのターン開始時
-    if game_state.game_state == STATE_PLAYER_TURN and not game_state.waiting_input:
-        # プレイヤーの入力処理
+            # プレイヤーが死亡していたらループを中断
+            if current_state.player.hp <= 0:
+                break
+
+            # 敵のターン
+            current_state = yield from _enemy_turn(current_state)
+
+        # このレベルの敵を全て倒した
+        if current_state.player.hp > 0:
+            next_level = current_state.level + 1
+            current_state = _reset_game(next_level)
+            current_state.message = f"YOU ENTER LEVEL {next_level}!"
+
+            # スペースキー入力待ち
+            while True:
+                yield current_state
+                if pyxel.btnp(pyxel.KEY_SPACE):
+                    current_state.message = ""
+                    break
+
+
+def _player_turn(game_state):
+    """プレイヤーのターンを処理するジェネレーター"""
+    current_state = game_state
+
+    # プレイヤーの入力を待つ
+    while True:
+        yield current_state
+
+        # 移動方向の決定
         dx, dy = 0, 0
         if pyxel.btnp(pyxel.KEY_UP) or pyxel.btnp(pyxel.KEY_W):
             dy = -1
@@ -74,12 +105,12 @@ def _update(game_state):
         elif pyxel.btnp(pyxel.KEY_RIGHT) or pyxel.btnp(pyxel.KEY_D):
             dx = 1
 
-        # 移動がない場合は現在の状態を返す
+        # 移動入力がない場合は続けて入力待ち
         if dx == 0 and dy == 0:
-            return game_state
+            continue
 
-        # 現在の状態を複製して新しいゲーム状態を作成
-        new_state = _game_state_clone(game_state)
+        # 移動処理
+        new_state = _game_state_clone(current_state)
         player = new_state.player
         new_x = player.x + dx
         new_y = player.y + dy
@@ -92,122 +123,81 @@ def _update(game_state):
                 if enemy.x == new_x and enemy.y == new_y:
                     # 敵を攻撃
                     enemy.hp -= player.attack
-                    # メッセージを設定して入力待ち状態にする
-                    new_state.message = f"プレイヤーは敵に{player.attack}ダメージを与えた！"
-                    new_state.waiting_input = True
+                    message = f"YOU DEAL {player.attack}pt DAMAGE"
 
                     if enemy.hp <= 0:
                         new_state.enemies.remove(enemy)
                         player.exp += 1
-                        # 敵を倒したメッセージを追加
-                        new_state.message += " 敵を倒した！"
+                        message += " and SLAIN"
+
+                    new_state.message = f"{message}!"
+
+                    # メッセージ表示と入力待ち
+                    while True:
+                        yield new_state
+                        if pyxel.btnp(pyxel.KEY_SPACE):
+                            new_state.message = ""
+                            break
 
                     enemy_hit = True
                     break
 
             if not enemy_hit:
+                # 移動実行
                 player.x = new_x
                 player.y = new_y
 
                 # アイテム取得判定
-                for item in list(new_state.items):  # リストにコピーして処理
+                for item in new_state.items:
                     if item.x == player.x and item.y == player.y:
                         # アイテムを拾う
                         player.hp += 5
                         new_state.items.remove(item)
-                        # メッセージを設定して入力待ち状態にする
-                        new_state.message = "回復アイテムを拾った！ HPが5回復した！"
-                        new_state.waiting_input = True
+                        new_state.message = "YOU GET a POTION and HEAL 5pt."
+
+                        # メッセージ表示と入力待ち
+                        while True:
+                            yield new_state
+                            if pyxel.btnp(pyxel.KEY_SPACE):
+                                new_state.message = ""
+                                break
                         break
 
-            # プレイヤーの行動が終わったら敵の攻撃フェーズへ
-            if not new_state.waiting_input:  # メッセージ表示がない場合はすぐに敵のターンへ
-                new_state.game_state = STATE_ENEMY_ATTACK
-                new_state.current_enemy_index = 0
-                return _continue_game_flow(new_state)  # 敵の攻撃処理を開始
-            else:
-                # メッセージあり→スペース押下後に敵のターンへ進むよう設定
-                new_state.next_state = STATE_ENEMY_ATTACK
-                new_state.current_enemy_index = 0
-
+        # プレイヤーターン終了
         return new_state
 
-    # この部分は通常は実行されない（継続処理で次の状態に進むため）
-    return game_state
 
+def _enemy_turn(game_state):
+    """敵のターンを処理するジェネレーター"""
+    current_state = game_state
+    player = current_state.player
 
-def _continue_game_flow(game_state):
-    """ゲームの継続処理を行う"""
-    # 次の状態があれば適用
-    if hasattr(game_state, 'next_state'):
-        new_state = _game_state_clone(game_state)
-        new_state.game_state = new_state.next_state
-        delattr(new_state, 'next_state')  # 使用済みの次状態を削除
-        return _continue_game_flow(new_state)  # 続けて処理
-
-    # 敵の攻撃フェーズ
-    if game_state.game_state == STATE_ENEMY_ATTACK:
-        new_state = _game_state_clone(game_state)
-
-        # 全ての敵の処理が終わったか確認
-        if new_state.current_enemy_index >= len(new_state.enemies):
-            # 敵の移動フェーズへ
-            new_state.game_state = STATE_ENEMY_MOVE
-            new_state.current_enemy_index = 0
-            return _continue_game_flow(new_state)
-
-        # 現在の敵を取得
-        enemy = new_state.enemies[new_state.current_enemy_index]
-        player = new_state.player
-
-        # プレイヤーへの攻撃判定
+    # 各敵の攻撃フェーズ
+    for enemy in current_state.enemies:
+        # プレイヤー隣接判定（攻撃判定）
         if abs(enemy.x - player.x) <= 1 and abs(enemy.y - player.y) <= 1:
             if random.random() < 0.9:  # 攻撃成功判定
-                player.hp -= enemy.attack
-                new_state.message = f"敵からの攻撃で{enemy.attack}ダメージを受けた！"
-                new_state.waiting_input = True
+                # 攻撃処理
+                new_state = _game_state_clone(current_state)
+                new_state.player.hp -= enemy.attack
+                new_state.message = f"YOU ARE DAMAGED by {enemy.attack}pt."
 
-                # プレイヤーのHPが0以下ならゲームオーバー
-                if player.hp <= 0:
-                    new_state.game_state = STATE_GAME_OVER
-                    new_state.message = "あなたは死んでしまった..."
-                    new_state.waiting_input = True
-                    return new_state
+                # メッセージ表示と入力待ち
+                while True:
+                    yield new_state
+                    if pyxel.btnp(pyxel.KEY_SPACE):
+                        new_state.message = ""
+                        break
 
-        # 次の敵へ
-        new_state.current_enemy_index += 1
+                current_state = new_state
 
-        # メッセージがある場合はスペースキー待ち、なければ次の敵へ
-        if new_state.waiting_input:
-            new_state.next_state = STATE_ENEMY_ATTACK  # 現在のフェーズを続行
-            return new_state
-        else:
-            return _continue_game_flow(new_state)  # 続けて次の敵の処理
+                # プレイヤー死亡チェック
+                if current_state.player.hp <= 0:
+                    return current_state
 
-    # 敵の移動フェーズ
-    elif game_state.game_state == STATE_ENEMY_MOVE:
-        new_state = _game_state_clone(game_state)
-
-        # 全ての敵の処理が終わったか確認
-        if new_state.current_enemy_index >= len(new_state.enemies):
-            # 敵が全滅したか確認
-            if len(new_state.enemies) == 0:
-                # 次のレベルへ
-                next_level = new_state.level + 1
-                new_state = _reset_game(next_level)
-                new_state.message = f"レベル{next_level}に進んだ！"
-                new_state.waiting_input = True
-                return new_state
-
-            # プレイヤーのターンへ戻る
-            new_state.game_state = STATE_PLAYER_TURN
-            return new_state
-
-        # 現在の敵を取得
-        enemy = new_state.enemies[new_state.current_enemy_index]
-        player = new_state.player
-
-        # プレイヤーに近い場合は移動しない（攻撃は別フェーズで行う）
+    # 各敵の移動フェーズ
+    for enemy in current_state.enemies:
+        # プレイヤーに近接していない場合のみ移動
         if not (abs(enemy.x - player.x) <= 1 and abs(enemy.y - player.y) <= 1):
             # プレイヤーに近づく簡単なAI
             dx = 1 if player.x > enemy.x else -1 if player.x < enemy.x else 0
@@ -223,30 +213,14 @@ def _continue_game_flow(game_state):
             new_x = enemy.x + dx
             new_y = enemy.y + dy
 
-            # 移動可能かどうかを確認
-            if (_is_floor(new_state, new_x, new_y) and
-                    not _is_occupied(new_state, new_x, new_y)):
+            # 移動可能かどうかを確認して移動
+            if (_is_floor(current_state, new_x, new_y) and
+                    not _is_occupied(current_state, new_x, new_y)):
                 enemy.x = new_x
                 enemy.y = new_y
 
-        # 次の敵へ
-        new_state.current_enemy_index += 1
-        return _continue_game_flow(new_state)  # 続けて次の敵の処理
-
-    # 次のレベルフェーズ（現在は直接リセットで処理）
-    elif game_state.game_state == STATE_NEXT_LEVEL:
-        return game_state
-
-    # プレイヤーターンフェーズ
-    elif game_state.game_state == STATE_PLAYER_TURN:
-        return game_state
-
-    # ゲームオーバーフェーズ
-    elif game_state.game_state == STATE_GAME_OVER:
-        return game_state
-
-    # デフォルト
-    return game_state
+    # 敵のターン終了
+    return current_state
 
 
 # draw関数の定義
@@ -288,13 +262,12 @@ def _draw(game_state):
         pyxel.rect(0, HEIGHT - 16, WIDTH, 16, MESSAGE_BG_COLOR)
         # メッセージテキスト
         pyxel.text(4, HEIGHT - 12, game_state.message, MESSAGE_COLOR)
-        # 入力待ち表示
-        if game_state.waiting_input:
-            pyxel.text(WIDTH - 80, HEIGHT - 12,
-                       "PRESS SPACE TO CONTINUE", MESSAGE_COLOR)
+        # 続行表示
+        if "GAME OVER" not in game_state.message:
+            pyxel.text(WIDTH - 32, HEIGHT - 12, "[SPACE]", MESSAGE_COLOR)
 
     # ゲームオーバー画面
-    if game_state.game_state == STATE_GAME_OVER:
+    if game_state.player.hp <= 0:
         pyxel.rect(WIDTH//2 - 50, HEIGHT//2 - 15, 100, 30, 1)
         pyxel.text(52, 50, "GAME OVER", 8)
         pyxel.text(38, 70, "PRESS R TO RESTART", 7)
@@ -303,27 +276,14 @@ def _draw(game_state):
 def _game_state_clone(game_state):
     def clone(entity): return types.SimpleNamespace(**vars(entity))
 
-    new_state = types.SimpleNamespace(
+    return types.SimpleNamespace(
         level=game_state.level,
         map_data=game_state.map_data,
         player=clone(game_state.player),
         enemies=[clone(enemy) for enemy in game_state.enemies],
         items=[clone(item) for item in game_state.items],
-        message=game_state.message,
-        waiting_input=game_state.waiting_input,
-        game_state=game_state.game_state,
-        current_enemy_index=getattr(game_state, 'current_enemy_index', 0)
+        message=game_state.message
     )
-
-    # 次の状態が設定されていればコピー
-    if hasattr(game_state, 'next_state'):
-        new_state.next_state = game_state.next_state
-
-    return new_state
-
-
-def _game_is_over(game_state):
-    return game_state.player.hp <= 0
 
 
 def _reset_game(level):
@@ -358,10 +318,7 @@ def _reset_game(level):
         player=player,
         enemies=enemies,
         items=items,
-        message="",  # メッセージを空文字で初期化
-        waiting_input=False,  # 入力待ち状態を初期化
-        game_state=STATE_PLAYER_TURN,  # ゲーム状態をプレイヤーターンに設定
-        current_enemy_index=0  # 現在処理中の敵のインデックス
+        message=""  # メッセージを空文字で初期化
     )
 
 
