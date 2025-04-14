@@ -48,123 +48,106 @@ def _game_loop(game_state):
     """ゲームのメインループをジェネレーターとして実装"""
     current_state = game_state
 
-    # ゲームループを永続的に実行
-    while True:
-        # プレイヤーのHP確認（ゲームオーバー判定）
-        if current_state.player.hp <= 0:
-            current_state.message = "YOU DIED..."
-
-            # リスタート入力を待つ
-            while True:
-                yield current_state
-                if pyxel.btnp(pyxel.KEY_R):
-                    return  # StopIterationを発生させて新しいゲームを開始
-
-        # レベルループ
-        while len(current_state.enemies) > 0:
-            # プレイヤーターン
-            current_state = yield from _player_turn(current_state)
-
-            # プレイヤーが死亡していたらループを中断
-            if current_state.player.hp <= 0:
-                break
-
-            # 敵のターン
-            current_state = yield from _enemy_turn(current_state)
+    # プレイヤーが生きている間、ゲームループを継続。
+    while current_state.player.hp > 0:
+        # プレイヤーターン
+        current_state = yield from _player_turn(current_state)
 
         # このレベルの敵を全て倒した
-        if current_state.player.hp > 0:
+        if not current_state.enemies:
             next_level = current_state.level + 1
             current_state = _reset_game(next_level)
             current_state.message = f"YOU ENTER LEVEL {next_level}!"
 
             # スペースキー入力待ち
-            while True:
+            yield current_state
+            while not pyxel.btnp(pyxel.KEY_SPACE):
                 yield current_state
-                if pyxel.btnp(pyxel.KEY_SPACE):
-                    current_state.message = ""
-                    break
+            current_state.message = ""
+
+        else:
+            # 敵のターン
+            current_state = yield from _enemy_turn(current_state)
+
+    # リスタート入力を待つ
+    current_state.message = "YOU DIED..."
+    yield current_state
+    while not pyxel.btnp(pyxel.KEY_R):
+        yield current_state
+    return  # StopIterationを発生させて新しいゲームを開始
 
 
 def _player_turn(game_state):
     """プレイヤーのターンを処理するジェネレーター"""
     current_state = game_state
 
-    # プレイヤーの入力を待つ
-    while True:
+    # 移動方向の決定
+    dx, dy = 0, 0
+    while dx == 0 and dy == 0:
         yield current_state
-
-        # 移動方向の決定
-        dx, dy = 0, 0
         if pyxel.btnp(pyxel.KEY_UP) or pyxel.btnp(pyxel.KEY_W):
-            dy = -1
-        elif pyxel.btnp(pyxel.KEY_DOWN) or pyxel.btnp(pyxel.KEY_S):
-            dy = 1
-        elif pyxel.btnp(pyxel.KEY_LEFT) or pyxel.btnp(pyxel.KEY_A):
-            dx = -1
-        elif pyxel.btnp(pyxel.KEY_RIGHT) or pyxel.btnp(pyxel.KEY_D):
-            dx = 1
+            dy -= 1
+        if pyxel.btnp(pyxel.KEY_DOWN) or pyxel.btnp(pyxel.KEY_S):
+            dy += 1
+        if pyxel.btnp(pyxel.KEY_LEFT) or pyxel.btnp(pyxel.KEY_A):
+            dx -= 1
+        if pyxel.btnp(pyxel.KEY_RIGHT) or pyxel.btnp(pyxel.KEY_D):
+            dx += 1
 
-        # 移動入力がない場合は続けて入力待ち
-        if dx == 0 and dy == 0:
-            continue
+    # 移動処理
+    new_state = _game_state_clone(current_state)
+    player = new_state.player
+    new_x = player.x + dx
+    new_y = player.y + dy
 
-        # 移動処理
-        new_state = _game_state_clone(current_state)
-        player = new_state.player
-        new_x = player.x + dx
-        new_y = player.y + dy
+    # 壁判定
+    if _is_floor(new_state, new_x, new_y):
+        # 敵との衝突判定
+        enemy_hit = False
+        for enemy in new_state.enemies:
+            if enemy.x == new_x and enemy.y == new_y:
+                # 敵を攻撃
+                enemy.hp -= player.attack
+                message = f"YOU DEAL {player.attack}pt DAMAGE"
 
-        # 壁判定
-        if _is_floor(new_state, new_x, new_y):
-            # 敵との衝突判定
-            enemy_hit = False
-            for enemy in new_state.enemies:
-                if enemy.x == new_x and enemy.y == new_y:
-                    # 敵を攻撃
-                    enemy.hp -= player.attack
-                    message = f"YOU DEAL {player.attack}pt DAMAGE"
+                if enemy.hp <= 0:
+                    new_state.enemies.remove(enemy)
+                    player.exp += 1
+                    message += " and SLAIN"
 
-                    if enemy.hp <= 0:
-                        new_state.enemies.remove(enemy)
-                        player.exp += 1
-                        message += " and SLAIN"
+                new_state.message = f"{message}!"
 
-                    new_state.message = f"{message}!"
+                # メッセージ表示と入力待ち
+                yield new_state
+                while not pyxel.btnp(pyxel.KEY_SPACE):
+                    yield new_state
+                new_state.message = ""
+
+                enemy_hit = True
+                break
+
+        if not enemy_hit:
+            # 移動実行
+            player.x = new_x
+            player.y = new_y
+
+            # アイテム取得判定
+            for item in new_state.items:
+                if item.x == player.x and item.y == player.y:
+                    # アイテムを拾う
+                    player.hp += 5
+                    new_state.items.remove(item)
+                    new_state.message = "YOU GET a POTION and HEAL 5pt."
 
                     # メッセージ表示と入力待ち
-                    while True:
+                    yield new_state
+                    while not pyxel.btnp(pyxel.KEY_SPACE):
                         yield new_state
-                        if pyxel.btnp(pyxel.KEY_SPACE):
-                            new_state.message = ""
-                            break
-
-                    enemy_hit = True
+                    new_state.message = ""
                     break
 
-            if not enemy_hit:
-                # 移動実行
-                player.x = new_x
-                player.y = new_y
-
-                # アイテム取得判定
-                for item in new_state.items:
-                    if item.x == player.x and item.y == player.y:
-                        # アイテムを拾う
-                        player.hp += 5
-                        new_state.items.remove(item)
-                        new_state.message = "YOU GET a POTION and HEAL 5pt."
-
-                        # メッセージ表示と入力待ち
-                        while True:
-                            yield new_state
-                            if pyxel.btnp(pyxel.KEY_SPACE):
-                                new_state.message = ""
-                                break
-                        break
-
-        # プレイヤーターン終了
-        return new_state
+    # プレイヤーターン終了
+    return new_state
 
 
 def _enemy_turn(game_state):
@@ -183,22 +166,17 @@ def _enemy_turn(game_state):
                 new_state.message = f"YOU ARE DAMAGED by {enemy.attack}pt."
 
                 # メッセージ表示と入力待ち
-                while True:
+                yield new_state
+                while not pyxel.btnp(pyxel.KEY_SPACE):
                     yield new_state
-                    if pyxel.btnp(pyxel.KEY_SPACE):
-                        new_state.message = ""
-                        break
+                new_state.message = ""
 
                 current_state = new_state
 
                 # プレイヤー死亡チェック
                 if current_state.player.hp <= 0:
-                    return current_state
-
-    # 各敵の移動フェーズ
-    for enemy in current_state.enemies:
-        # プレイヤーに近接していない場合のみ移動
-        if not (abs(enemy.x - player.x) <= 1 and abs(enemy.y - player.y) <= 1):
+                    break
+        else:
             # プレイヤーに近づく簡単なAI
             dx = 1 if player.x > enemy.x else -1 if player.x < enemy.x else 0
             dy = 1 if player.y > enemy.y else -1 if player.y < enemy.y else 0
